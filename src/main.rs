@@ -11,6 +11,8 @@ use tokio_rustls::{TlsAcceptor, rustls};
 use rcgen::{Certificate, CertificateParams, DistinguishedName};
 use rustls::{ServerConfig, PrivateKey, Certificate as RustlsCert};
 use tokio::runtime::Handle;
+use rand::{thread_rng, seq::SliceRandom};
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -162,19 +164,26 @@ impl LoadBalancer {
         if backends.is_empty() {
             return None;
         }
-
+    
         let mut min_connections = u32::MAX;
-        let mut selected_backend = None;
-
+        let mut candidates = Vec::new();
+    
         for backend in backends.iter() {
             let connections = *backend.active_connections.read().await;
             if connections < min_connections {
                 min_connections = connections;
-                selected_backend = Some(backend.clone());
+                candidates.clear();
+                candidates.push(backend.clone());
+            } else if connections == min_connections {
+                candidates.push(backend.clone());
             }
         }
 
-        selected_backend
+        if candidates.len() > 1 {
+            candidates.choose(&mut thread_rng()).cloned()
+        } else {
+            candidates.into_iter().next()
+        }
     }
 
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
