@@ -16,7 +16,7 @@ A fast, efficient, and small load balancing tool written in Rust. It implements 
 
 2. Clone the git project:
     ```bash
-    https://github.com/tn3w/rusty-loadbalancing.git
+    git clone https://github.com/tn3w/rusty-loadbalancing.git
     ```
 
 3. Move into the project folder:
