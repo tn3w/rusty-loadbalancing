@@ -47,13 +47,13 @@
 Commands using redis-cli:
 ```bash
 # Add backend server
-redis-cli RPUSH backend_servers "localhost:8081"
+redis-cli RPUSH rusty:backend_servers "localhost:8081"
 
 # Remove backend server 
-redis-cli LREM backend_servers 0 "localhost:8081"
+redis-cli LREM rusty:backend_servers 0 "localhost:8081"
 
 # List backends
-redis-cli LRANGE backend_servers 0 -1
+redis-cli LRANGE rusty:backend_servers 0 -1
 ```
 
 Python code example:
@@ -63,13 +63,13 @@ import redis
 r = redis.Redis(host='localhost', port=6379)
 
 # Add backend server
-r.rpush('backend_servers', 'localhost:8081')
+r.rpush('rusty:backend_servers', 'localhost:8081')
 
 # Remove backend server
-r.lrem('backend_servers', 0, 'localhost:8081')
+r.lrem('rusty:backend_servers', 0, 'localhost:8081')
 
 # List backends
-servers = r.lrange('backend_servers', 0, -1)
+servers = r.lrange('rusty:backend_servers', 0, -1)
 for server in servers:
     print(server.decode())
 ```

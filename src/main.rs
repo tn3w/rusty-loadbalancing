@@ -11,17 +11,19 @@ use tokio_rustls::{TlsAcceptor, rustls};
 use rcgen::{Certificate, CertificateParams, DistinguishedName};
 use rustls::{ServerConfig, PrivateKey, Certificate as RustlsCert};
 use tokio::runtime::Handle;
+use sha2::{Sha256, Digest};
 use rand::{thread_rng, seq::SliceRandom};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, default_value_t = 1)]
-    workers: usize,
-
     #[arg(short, long, value_parser = parse_bind_address)]
     bind: String,
+
+    #[arg(short, long, default_value_t = 1)]
+    workers: usize,
 
     #[arg(long)]
     https: bool,
@@ -31,6 +33,12 @@ struct Args {
 
     #[arg(long)]
     key_file: Option<PathBuf>,
+
+    #[arg(long)]
+    rate_limit: Option<u32>,
+
+    #[arg(long)]
+    rate_limit_page: Option<PathBuf>,
 }
 
 enum StreamType {
@@ -78,10 +86,13 @@ struct Backend {
     active_connections: Arc<RwLock<u32>>,
 }
 
+
 struct LoadBalancer {
     backends: Arc<RwLock<Vec<Backend>>>,
     redis_client: Client,
     tls_acceptor: Option<TlsAcceptor>,
+    rate_limit: Option<u32>,
+    rate_limit_page: Option<String>,
 }
 
 impl LoadBalancer {
@@ -93,11 +104,60 @@ impl LoadBalancer {
             None
         };
 
+        let rate_limit_page = if let Some(path) = &args.rate_limit_page {
+            Some(fs::read_to_string(path)?)
+        } else {
+            None
+        };
+
         Ok(LoadBalancer {
             backends: Arc::new(RwLock::new(Vec::new())),
             redis_client,
             tls_acceptor,
+            rate_limit: args.rate_limit,
+            rate_limit_page,
         })
+    }
+
+    fn hash_ip(ip: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(ip.as_bytes());
+        let result = hasher.finalize();
+        hex::encode(result)
+    }
+
+    async fn check_rate_limit(&self, ip: &str) -> Result<bool, redis::RedisError> {
+        if let Some(rate_limit) = self.rate_limit {
+            let mut conn = self.redis_client.get_connection()?;
+            let hashed_ip = Self::hash_ip(ip);
+            let key = format!("rusty:rate_limit:{}", hashed_ip);
+
+            let current_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
+
+            let mut pipe = redis::pipe();
+            pipe.atomic()
+                .rpush(&key, current_time)
+                .ignore()
+                .ltrim(&key, -(rate_limit as isize + 3), -1)
+                .ignore()
+                .lrange(&key, 0, -1)
+                .expire(&key, 10);
+
+            let result: (Vec<i64>,) = pipe.query(&mut conn)?;
+            let timestamps = result.0;
+
+            let recent_requests = timestamps
+                .iter()
+                .filter(|&&t| current_time - t <= 10)
+                .count();
+
+            Ok(recent_requests > rate_limit as usize)
+        } else {
+            Ok(false)
+        }
     }
 
     fn setup_tls(args: &Args) -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
@@ -146,7 +206,7 @@ impl LoadBalancer {
 
     async fn update_backends(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut conn = self.redis_client.get_connection()?;
-        let backend_list: Vec<String> = conn.lrange("backend_servers", 0, -1)?;
+        let backend_list: Vec<String> = conn.lrange("rusty:backend_servers", 0, -1)?;
 
         let mut backends = self.backends.write().await;
         backends.clear();
