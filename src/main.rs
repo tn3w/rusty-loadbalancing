@@ -1,20 +1,20 @@
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncWriteExt, AsyncWrite},
     net::{TcpListener, TcpStream},
     sync::RwLock,
+    time::sleep,
+    runtime::Handle,
 };
+use tokio_rustls::{TlsAcceptor, rustls};
 use std::{sync::Arc, time::Duration, path::PathBuf, fs};
 use redis::{Client, Commands};
 use clap::Parser;
-use tokio::time::sleep;
-use tokio_rustls::{TlsAcceptor, rustls};
 use rcgen::{Certificate, CertificateParams, DistinguishedName};
 use rustls::{ServerConfig, PrivateKey, Certificate as RustlsCert};
-use tokio::runtime::Handle;
 use sha2::{Sha256, Digest};
 use rand::{thread_rng, seq::SliceRandom};
 use std::time::{SystemTime, UNIX_EPOCH};
-
+use crate::StreamType::{Plain, Tls};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -54,11 +54,11 @@ impl StreamType {
         Box<dyn AsyncWrite + Unpin + Send>,
     ) {
         match self {
-            StreamType::Plain(stream) => {
+            Plain(stream) => {
                 let (read_half, write_half) = stream.into_split();
                 (Box::new(read_half), Box::new(write_half))
             }
-            StreamType::Tls(stream) => {
+            Tls(stream) => {
                 let (read_half, write_half) = tokio::io::split(stream);
                 (Box::new(read_half), Box::new(write_half))
             }
@@ -137,19 +137,12 @@ impl LoadBalancer {
                 .unwrap()
                 .as_secs() as i64;
 
-            let mut pipe = redis::pipe();
-            pipe.atomic()
-                .rpush(&key, current_time)
-                .ignore()
-                .ltrim(&key, -(rate_limit as isize + 3), -1)
-                .ignore()
-                .lrange(&key, 0, -1)
-                .expire(&key, 10);
+            let _result_rpush: () = conn.rpush(&key, current_time)?;
+            let _result_ltrim: () = conn.ltrim(&key, -(rate_limit as isize + 3), -1)?;
+            let result_lrange: Vec<i64> = conn.lrange(&key, 0, -1)?;
+            let _result_expire: () = conn.expire(&key, 10)?;
 
-            let result: (Vec<i64>,) = pipe.query(&mut conn)?;
-            let timestamps = result.0;
-
-            let recent_requests = timestamps
+            let recent_requests = result_lrange
                 .iter()
                 .filter(|&&t| current_time - t <= 10)
                 .count();
@@ -246,10 +239,41 @@ impl LoadBalancer {
         }
     }
 
-    async fn handle_connection(&self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    async fn handle_connection(&self, mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+        let peer_addr = stream.peer_addr()?;
+        let ip = peer_addr.ip().to_string();
+
+        if self.check_rate_limit(&ip).await? {
+            let response = if let Some(ref page) = self.rate_limit_page {
+                let body = page.as_bytes();
+                let content_length = body.len();
+                format!(
+                    "HTTP/1.1 429 Too Many Requests\r\n\
+                     Content-Type: text/html\r\n\
+                     Content-Length: {}\r\n\r\n{}",
+                    content_length,
+                    String::from_utf8_lossy(body)
+                )
+            } else {
+                let body = "Rate Limit Exceeded".as_bytes();
+                let content_length = body.len();
+                format!(
+                    "HTTP/1.1 429 Too Many Requests\r\n\
+                     Content-Type: text/plain\r\n\
+                     Content-Length: {}\r\n\r\n{}",
+                    content_length,
+                    String::from_utf8_lossy(body)
+                )
+            };
+
+            // FIXME: Get `SSL received a record that exceeded the maximum permissible length.` when using --https with --rate-limit
+            stream.write_all(response.as_bytes()).await?;
+            return Ok(());
+        }
+
         let stream = match &self.tls_acceptor {
-            Some(acceptor) => StreamType::Tls(acceptor.accept(stream).await?),
-            None => StreamType::Plain(stream),
+            Some(acceptor) => Tls(acceptor.accept(stream).await?),
+            None => Plain(stream),
         };
 
         let backend = self.get_least_loaded_backend().await
