@@ -289,12 +289,12 @@ impl LoadBalancer {
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
         let peer_addr = stream.peer_addr()?;
         let ip = peer_addr.ip().to_string();
-    
+
         let stream = match &self.tls_acceptor {
             Some(acceptor) => Tls(acceptor.accept(stream).await?),
             None => Plain(stream),
         };
-    
+
         if self.check_rate_limit(&ip).await? {
             let mut response = if let Some(ref page) = self.rate_limit_page {
                 let body = page.as_bytes();
@@ -317,29 +317,29 @@ impl LoadBalancer {
                     String::from_utf8_lossy(body)
                 ).into_bytes()
             };
-    
+
             response = self.modify_response_headers(response).await;
             let (_, mut writer) = stream.into_split().await;
             writer.write_all(&response).await?;
             return Ok(());
         }
-    
+
         let backend = self.get_least_loaded_backend().await
             .ok_or("No available backends")?;
-    
+
         {
             let mut counter = backend.active_connections.write().await;
             *counter += 1;
         }
-    
+
         let server = TcpStream::connect(&backend.address).await?;
         let (mut client_read, mut client_write) = stream.into_split().await;
         let (mut server_read, mut server_write) = server.into_split();
-    
+
         let mut server_reader = tokio::io::BufReader::new(&mut server_read);
-    
+
         let client_to_server = tokio::io::copy(&mut client_read, &mut server_write);
-    
+
         let server_to_client = async {
             let mut buffer = Vec::new();
             let mut line = String::new();
@@ -367,32 +367,32 @@ impl LoadBalancer {
                     buffer.extend_from_slice(line.as_bytes());
                 }
             }
-    
+
             if let Some(header) = &self.server_header {
                 if !header.is_empty() {
                     buffer.extend_from_slice(format!("Server: {}\r\n", header).as_bytes());
                 }
             }
-    
+
             if found_end {
                 buffer.extend_from_slice(b"\r\n");
             }
-    
+
             client_write.write_all(&buffer).await?;
-    
+
             tokio::io::copy(&mut server_reader, &mut client_write).await?;
             Ok::<_, std::io::Error>(())
         };
-    
+
         let (client_result, server_result) = tokio::join!(client_to_server, server_to_client);
         client_result?;
         server_result?;
-    
+
         {
             let mut counter = backend.active_connections.write().await;
             *counter -= 1;
         }
-    
+
         Ok(())
     }
 
