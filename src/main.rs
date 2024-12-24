@@ -1,5 +1,5 @@
 use tokio::{
-    io::{AsyncRead, AsyncWriteExt, AsyncWrite},
+    io::{AsyncRead, AsyncWriteExt, AsyncWrite, AsyncBufReadExt},
     net::{TcpListener, TcpStream},
     sync::RwLock,
     time::sleep,
@@ -42,6 +42,9 @@ struct Args {
 
     #[arg(long)]
     rate_limit_page: Option<PathBuf>,
+
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    server_header: Option<String>,
 }
 
 enum StreamType {
@@ -96,6 +99,7 @@ struct LoadBalancer {
     tls_acceptor: Option<TlsAcceptor>,
     rate_limit: Option<u32>,
     rate_limit_page: Option<String>,
+    server_header: Option<String>,
 }
 
 impl LoadBalancer {
@@ -119,6 +123,7 @@ impl LoadBalancer {
             tls_acceptor,
             rate_limit: args.rate_limit,
             rate_limit_page,
+            server_header: args.server_header.clone(),
         })
     }
 
@@ -154,6 +159,45 @@ impl LoadBalancer {
         } else {
             Ok(false)
         }
+    }
+
+    async fn modify_response_headers(&self, response: Vec<u8>) -> Vec<u8> {
+        if let Ok(response_str) = String::from_utf8(response.clone()) {
+            let parts: Vec<&str> = response_str.split("\r\n\r\n").collect();
+            if parts.len() >= 1 {
+                let headers: Vec<&str> = parts[0].split("\r\n").collect();
+                let mut new_headers = Vec::new();
+                let mut server_header_found = false;
+
+                for header in headers {
+                    if header.to_lowercase().starts_with("server:") {
+                        server_header_found = true;
+                        if let Some(new_server) = &self.server_header {
+                            if !new_server.is_empty() {
+                                new_headers.push(format!("Server: {}", new_server));
+                            }
+                        }
+                    } else {
+                        new_headers.push(header.to_string());
+                    }
+                }
+
+                if !server_header_found && self.server_header.as_ref().map_or(false, |h| !h.is_empty()) {
+                    new_headers.push(format!("Server: {}", self.server_header.as_ref().unwrap()));
+                }
+
+                let mut new_response = new_headers.join("\r\n");
+                if parts.len() > 1 {
+                    new_response.push_str("\r\n\r\n");
+                    new_response.push_str(parts[1]);
+                } else {
+                    new_response.push_str("\r\n\r\n");
+                }
+
+                return new_response.into_bytes();
+            }
+        }
+        response
     }
 
     fn setup_tls(args: &Args) -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
@@ -245,14 +289,14 @@ impl LoadBalancer {
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
         let peer_addr = stream.peer_addr()?;
         let ip = peer_addr.ip().to_string();
-
+    
         let stream = match &self.tls_acceptor {
             Some(acceptor) => Tls(acceptor.accept(stream).await?),
             None => Plain(stream),
         };
-
+    
         if self.check_rate_limit(&ip).await? {
-            let response = if let Some(ref page) = self.rate_limit_page {
+            let mut response = if let Some(ref page) = self.rate_limit_page {
                 let body = page.as_bytes();
                 let content_length = body.len();
                 format!(
@@ -261,7 +305,7 @@ impl LoadBalancer {
                      Content-Length: {}\r\n\r\n{}",
                     content_length,
                     String::from_utf8_lossy(body)
-                )
+                ).into_bytes()
             } else {
                 let body = "Rate Limit Exceeded".as_bytes();
                 let content_length = body.len();
@@ -271,36 +315,84 @@ impl LoadBalancer {
                      Content-Length: {}\r\n\r\n{}",
                     content_length,
                     String::from_utf8_lossy(body)
-                )
+                ).into_bytes()
             };
-
+    
+            response = self.modify_response_headers(response).await;
             let (_, mut writer) = stream.into_split().await;
-            writer.write_all(response.as_bytes()).await?;
+            writer.write_all(&response).await?;
             return Ok(());
         }
-
+    
         let backend = self.get_least_loaded_backend().await
             .ok_or("No available backends")?;
-
+    
         {
             let mut counter = backend.active_connections.write().await;
             *counter += 1;
         }
-
+    
         let server = TcpStream::connect(&backend.address).await?;
         let (mut client_read, mut client_write) = stream.into_split().await;
         let (mut server_read, mut server_write) = server.into_split();
-
+    
+        let mut server_reader = tokio::io::BufReader::new(&mut server_read);
+    
         let client_to_server = tokio::io::copy(&mut client_read, &mut server_write);
-        let server_to_client = tokio::io::copy(&mut server_read, &mut client_write);
-
-        let _ = tokio::join!(client_to_server, server_to_client);
-
+    
+        let server_to_client = async {
+            let mut buffer = Vec::new();
+            let mut line = String::new();
+            let mut found_end = false;
+            
+            loop {
+                line.clear();
+                if server_reader.read_line(&mut line).await? == 0 {
+                    break;
+                }
+                if line == "\r\n" {
+                    found_end = true;
+                    break;
+                }
+                
+                if line.to_lowercase().starts_with("server:") {
+                    match &self.server_header {
+                        Some(new_header) if !new_header.is_empty() => {
+                            buffer.extend_from_slice(format!("Server: {}\r\n", new_header).as_bytes());
+                        }
+                        Some(_) => (),
+                        None => buffer.extend_from_slice(line.as_bytes()),
+                    }
+                } else {
+                    buffer.extend_from_slice(line.as_bytes());
+                }
+            }
+    
+            if let Some(header) = &self.server_header {
+                if !header.is_empty() {
+                    buffer.extend_from_slice(format!("Server: {}\r\n", header).as_bytes());
+                }
+            }
+    
+            if found_end {
+                buffer.extend_from_slice(b"\r\n");
+            }
+    
+            client_write.write_all(&buffer).await?;
+    
+            tokio::io::copy(&mut server_reader, &mut client_write).await?;
+            Ok::<_, std::io::Error>(())
+        };
+    
+        let (client_result, server_result) = tokio::join!(client_to_server, server_to_client);
+        client_result?;
+        server_result?;
+    
         {
             let mut counter = backend.active_connections.write().await;
             *counter -= 1;
         }
-
+    
         Ok(())
     }
 
