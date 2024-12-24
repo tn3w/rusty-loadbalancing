@@ -25,6 +25,9 @@ struct Args {
     #[arg(short, long, default_value_t = 1)]
     workers: usize,
 
+    #[arg(short, long, value_parser = parse_bind_address, default_value = "127.0.0.1:6379")]
+    redis: String,
+
     #[arg(long)]
     https: bool,
 
@@ -239,9 +242,14 @@ impl LoadBalancer {
         }
     }
 
-    async fn handle_connection(&self, mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    async fn handle_connection(&self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
         let peer_addr = stream.peer_addr()?;
         let ip = peer_addr.ip().to_string();
+
+        let stream = match &self.tls_acceptor {
+            Some(acceptor) => Tls(acceptor.accept(stream).await?),
+            None => Plain(stream),
+        };
 
         if self.check_rate_limit(&ip).await? {
             let response = if let Some(ref page) = self.rate_limit_page {
@@ -266,15 +274,10 @@ impl LoadBalancer {
                 )
             };
 
-            // FIXME: Get `SSL received a record that exceeded the maximum permissible length.` when using --https with --rate-limit
-            stream.write_all(response.as_bytes()).await?;
+            let (_, mut writer) = stream.into_split().await;
+            writer.write_all(response.as_bytes()).await?;
             return Ok(());
         }
-
-        let stream = match &self.tls_acceptor {
-            Some(acceptor) => Tls(acceptor.accept(stream).await?),
-            None => Plain(stream),
-        };
 
         let backend = self.get_least_loaded_backend().await
             .ok_or("No available backends")?;
@@ -316,7 +319,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let runtime = Handle::current();
-    let lb = Arc::new(LoadBalancer::new("redis://127.0.0.1/", &args).await?);
+    let redis_url = format!("redis://{}/", args.redis);
+    let lb = Arc::new(LoadBalancer::new(&redis_url, &args).await?);
 
     let updater_lb = lb.clone();
     runtime.spawn(async move {
@@ -324,8 +328,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let listener = TcpListener::bind(&args.bind).await?;
-    println!("Listening on {} ({})", args.bind,
-             if lb.tls_acceptor.is_some() { "HTTPS" } else { "HTTP" });
+    println!(
+        "Listening on {}://{}",
+        if lb.tls_acceptor.is_some() { "https" } else { "http" },
+        args.bind
+    );
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(args.workers));
 
