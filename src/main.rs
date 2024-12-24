@@ -401,7 +401,7 @@ impl LoadBalancer {
             if let Err(e) = self.update_backends().await {
                 eprintln!("Error updating backends: {}", e);
             }
-            sleep(Duration::from_secs(10)).await;
+            sleep(Duration::from_secs(1)).await;
         }
     }
 }
