@@ -44,7 +44,43 @@
     ./target/release/rusty-loadbalancing --help
     ```
 
-## Managing backend load balancing server list
+## CLI
+```
+Usage: rusty-loadbalancing [OPTIONS] --bind <BIND>
+
+Options:
+  -b, --bind <BIND>                        
+  -w, --workers <WORKERS>                  [default: 1]
+  -r, --redis <REDIS>                      [default: 127.0.0.1:6379]
+      --https                              
+      --cert-file <CERT_FILE>              
+      --key-file <KEY_FILE>                
+      --rate-limit <RATE_LIMIT>            
+      --rate-limit-page <RATE_LIMIT_PAGE>  
+      --server-header [<SERVER_HEADER>]    
+  -h, --help                               Print help
+  -V, --version                            Print version
+```
+
+### Backend Server Mapping
+You can configure separate backend server lists for different hosts or IP addresses making requests to the server. For example, using `rusty:backend_servers:test.example.com`, all requests to `test.example.com` will use the origins defined in that Redis list. If no specific match for a host or IP address is found, the rusty:backend_servers list serves as the default. Each backend_servers list follows an isolatet least-connections principle.
+
+Example:
+```bash
+redis-cli RPUSH rusty:backend_servers:test.example.com "127.0.0.1:8080"
+redis-cli RPUSH rusty:backend_servers:www.example.com "127.0.0.1:5000"
+```
+
+### IP Allowlist / Network Whitelisting
+Configure the `rusty:whitelisted_ips` list with IPv4 or IPv6 network addresses, such as 103.21.244.0/22 or 2400:cb00::/32 (Cloudflare). When this list is present, it can be used to block all connections from IP addresses outside the specified network ranges. For domains using Cloudflare as a front, the relevant IPs can be found [here for IPv4](https://www.cloudflare.com/ips-v4) and [here for IPv6](https://www.cloudflare.com/ips-v6).
+
+Example:
+```bash
+redis-cli RPUSH rusty:whitelisted_ips "103.21.244.0/22"
+redis-cli RPUSH rusty:whitelisted_ips "2400:cb00::/32"
+```
+
+## Examples
 Commands using redis-cli:
 ```bash
 # Add backend server
@@ -76,7 +112,6 @@ for server in servers:
 ```
 
 This process can be initiated when the web server starts up, adding it to the list, and it can be removed from the list upon termination.
-
 
 ### Attribution
 - Logo icon: [Rust icons created by Freepik - Flaticon](https://www.flaticon.com/free-icons/rust)
