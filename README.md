@@ -46,20 +46,41 @@
 
 ## CLI
 ```
+░░       ░░░  ░░░░  ░░░      ░░░        ░░  ░░░░  ░
+▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒  ▒▒  ▒▒
+▓▓       ▓▓▓  ▓▓▓▓  ▓▓▓      ▓▓▓▓▓▓  ▓▓▓▓▓▓▓    ▓▓▓
+██  ███  ███  ████  ████████  █████  ████████  ████
+██  ████  ███      ████      ██████  ████████  ████                                           
+ A fast, efficient, and small load balancing tool.
+
+Author: TN3W
+GitHub: https://github.com/tn3w/rusty-loadbalancing
+
 Usage: rusty-loadbalancing [OPTIONS] --bind <BIND>
 
 Options:
-  -b, --bind <BIND>                        
-  -w, --workers <WORKERS>                  [default: 1]
-  -r, --redis <REDIS>                      [default: 127.0.0.1:6379]
-      --https                              
-      --cert-file <CERT_FILE>              
-      --key-file <KEY_FILE>                
-      --rate-limit <RATE_LIMIT>            
-      --rate-limit-page <RATE_LIMIT_PAGE>  
-      --server-header [<SERVER_HEADER>]    
-  -h, --help                               Print help
-  -V, --version                            Print version
+  -b, --bind <BIND>
+          Address to bind the server to.
+  -w, --workers <WORKERS>
+          Number of worker threads to use. [default: 1]
+  -r, --redis <REDIS>
+          Redis server address. [default: 127.0.0.1:6379]
+      --https
+          Enable HTTPS for secure connections.
+      --cert-file <CERT_FILE>
+          Path to the SSL certificate file.
+      --key-file <KEY_FILE>
+          Path to the SSL key file.
+      --rate-limit <RATE_LIMIT>
+          Rate limit for incoming requests (requests per 10 seconds).
+      --rate-limit-page <RATE_LIMIT_PAGE>
+          Path to the rate limit configuration page.
+      --server-header [<SERVER_HEADER>]
+          Value for the Server header in responses (omit if empty).
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 ### Backend Server Mapping

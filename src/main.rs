@@ -17,34 +17,48 @@ use rand::{thread_rng, seq::SliceRandom};
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::StreamType::{Plain, Tls};
 
+
+static LOGO: &str = r#"
+░░       ░░░  ░░░░  ░░░      ░░░        ░░  ░░░░  ░
+▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒  ▒▒  ▒▒
+▓▓       ▓▓▓  ▓▓▓▓  ▓▓▓      ▓▓▓▓▓▓  ▓▓▓▓▓▓▓    ▓▓▓
+██  ███  ███  ████  ████████  █████  ████████  ████
+██  ████  ███      ████      ██████  ████████  ████                                           
+ A fast, efficient, and small load balancing tool.
+
+Author: TN3W
+GitHub: https://github.com/tn3w/rusty-loadbalancing
+"#;
+
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, value_parser = parse_bind_address)]
+    #[arg(short, long, value_parser = parse_bind_address, help = "Address to bind the server to.")]
     bind: String,
 
-    #[arg(short, long, default_value_t = 1)]
+    #[arg(short, long, default_value_t = 1, help = "Number of worker threads to use.")]
     workers: usize,
 
-    #[arg(short, long, value_parser = parse_bind_address, default_value = "127.0.0.1:6379")]
+    #[arg(short, long, value_parser = parse_bind_address, default_value = "127.0.0.1:6379", help = "Redis server address.")]
     redis: String,
 
-    #[arg(long)]
+    #[arg(long, help = "Enable HTTPS for secure connections.")]
     https: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Path to the SSL certificate file.")]
     cert_file: Option<PathBuf>,
 
-    #[arg(long)]
+    #[arg(long, help = "Path to the SSL key file.")]
     key_file: Option<PathBuf>,
 
-    #[arg(long)]
+    #[arg(long, help = "Rate limit for incoming requests (requests per 10 seconds).")]
     rate_limit: Option<u32>,
 
-    #[arg(long)]
+    #[arg(long, help = "Path to the rate limit configuration page.")]
     rate_limit_page: Option<PathBuf>,
 
-    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Value for the Server header in responses (omit if empty).")]
     server_header: Option<String>,
 }
 
@@ -530,6 +544,8 @@ impl LoadBalancer {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", LOGO);
+
     let args = Args::parse();
 
     let runtime = Handle::current();
