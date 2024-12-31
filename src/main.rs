@@ -96,7 +96,6 @@ struct Backend {
 #[derive(Clone)]
 struct BackendGroup {
     backends: Vec<Backend>,
-    last_updated: SystemTime,
 }
 
 struct LoadBalancer {
@@ -129,7 +128,6 @@ impl LoadBalancer {
             backend_groups: Arc::new(RwLock::new(HashMap::new())),
             default_backends: Arc::new(RwLock::new(BackendGroup {
                 backends: Vec::new(),
-                last_updated: SystemTime::now(),
             })),
             redis_client,
             tls_acceptor,
@@ -265,9 +263,7 @@ impl LoadBalancer {
         keys.sort();
 
         let mut new_groups = HashMap::new();
-        let now = SystemTime::now();
 
-        // Update default backends
         let default_backends: Vec<String> = conn.lrange("rusty:backend_servers", 0, -1)
             .map_err(|e| e.to_string())?;
         let default_group = BackendGroup {
@@ -277,11 +273,9 @@ impl LoadBalancer {
                     active_connections: Arc::new(RwLock::new(0)),
                 })
                 .collect(),
-            last_updated: now,
         };
         *self.default_backends.write().await = default_group;
 
-        // Update host-specific backend groups
         for key in keys {
             if key == "rusty:backend_servers" {
                 continue;
@@ -302,7 +296,6 @@ impl LoadBalancer {
                                 active_connections: Arc::new(RwLock::new(0)),
                             })
                             .collect(),
-                        last_updated: now,
                     };
                     new_groups.insert(host, group);
                 }
