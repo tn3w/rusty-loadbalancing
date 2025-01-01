@@ -1,21 +1,28 @@
+use crate::StreamType::{Plain, Tls};
+use clap::Parser;
+use ipnetwork::IpNetwork;
+use rand::{seq::SliceRandom, thread_rng};
+use rcgen::{Certificate, CertificateParams, DistinguishedName};
+use redis::{Client, Commands};
+use rustls::{Certificate as RustlsCert, PrivateKey, ServerConfig};
+use sha2::{Digest, Sha256};
+use std::{
+    fs, fmt,
+    collections::HashMap,
+    net::IpAddr,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+    error::Error
+};
 use tokio::{
-    io::{AsyncRead, AsyncWriteExt, AsyncWrite, AsyncBufReadExt},
+    io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
+    runtime::Handle,
     sync::RwLock,
     time::sleep,
-    runtime::Handle,
 };
-use ipnetwork::IpNetwork;
-use tokio_rustls::{TlsAcceptor, rustls};
-use std::{sync::Arc, time::Duration, path::PathBuf, fs, collections::HashMap, net::IpAddr};
-use redis::{Client, Commands};
-use clap::Parser;
-use rcgen::{Certificate, CertificateParams, DistinguishedName};
-use rustls::{ServerConfig, PrivateKey, Certificate as RustlsCert};
-use sha2::{Sha256, Digest};
-use rand::{thread_rng, seq::SliceRandom};
-use std::time::{SystemTime, UNIX_EPOCH};
-use crate::StreamType::{Plain, Tls};
+use tokio_rustls::{rustls, TlsAcceptor};
 
 
 static LOGO: &str = r#"
@@ -111,6 +118,34 @@ struct Backend {
 struct BackendGroup {
     backends: Vec<Backend>,
 }
+
+#[derive(Debug)]
+pub enum ProxyError {
+    Io(std::io::Error),
+    Tls(String),
+    Other(String),
+    NoBackend,
+}
+
+impl fmt::Display for ProxyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProxyError::Io(e) => write!(f, "IO error: {}", e),
+            ProxyError::Tls(e) => write!(f, "TLS error: {}", e),
+            ProxyError::Other(e) => write!(f, "Other error: {}", e),
+            ProxyError::NoBackend => write!(f, "No backend available"),
+        }
+    }
+}
+
+impl Error for ProxyError {}
+
+impl From<std::io::Error> for ProxyError {
+    fn from(e: std::io::Error) -> Self {
+        ProxyError::Io(e)
+    }
+}
+
 
 struct LoadBalancer {
     backend_groups: Arc<RwLock<HashMap<String, BackendGroup>>>,
@@ -409,26 +444,33 @@ impl LoadBalancer {
         }
     }
 
-    async fn handle_connection(&self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
-        let peer_addr = stream.peer_addr()?;
-        let ip = peer_addr.ip().to_string();
-
+    async fn check_ip_whitelist(&self, ip: &str) -> Result<bool, ProxyError> {
         let networks = self.whitelisted_networks.read().await;
-        if !self.is_ip_whitelisted(ip.parse().unwrap(), &networks) {
-            return Ok(());
-        }
+        let parsed_ip = ip
+            .parse()
+            .map_err(|e| ProxyError::Other(format!("IP parsing error: {}", e)))?;
+        Ok(self.is_ip_whitelisted(parsed_ip, &networks))
+    }
 
-        let stream = match &self.tls_acceptor {
-            Some(acceptor) => Tls(acceptor.accept(stream).await?),
+    async fn setup_tls_stream(&self, stream: TcpStream) -> Result<StreamType, ProxyError> {
+        Ok(match &self.tls_acceptor {
+            Some(acceptor) => {
+                let tls_stream = acceptor.accept(stream)
+                    .await
+                    .map_err(|e| ProxyError::Tls(e.to_string()))?;
+                Tls(tls_stream)
+            }
             None => Plain(stream),
-        };
+        })
+    }
 
-        let (mut client_read, mut client_write) = stream.into_split().await;
-
+    async fn parse_request_headers(
+        &self,
+        client_read: &mut (impl AsyncRead + Unpin),
+    ) -> Result<(Vec<u8>, Option<String>), ProxyError> {
         let mut headers = Vec::new();
         let mut host = None;
-
-        let mut reader = tokio::io::BufReader::new(&mut client_read);
+        let mut reader = BufReader::new(client_read);
         let mut line = String::new();
 
         while let Ok(n) = reader.read_line(&mut line).await {
@@ -442,36 +484,48 @@ impl LoadBalancer {
             line.clear();
         }
 
-        if self.check_rate_limit(&ip).await? {
-            let mut response = if let Some(ref page) = self.rate_limit_page {
-                let body = page.as_bytes();
-                let content_length = body.len();
-                format!(
-                    "HTTP/1.1 429 Too Many Requests\r\n\
-                     Content-Type: text/html\r\n\
-                     Content-Length: {}\r\n\r\n{}",
-                    content_length,
-                    String::from_utf8_lossy(body)
-                ).into_bytes()
-            } else {
-                let body = "Rate Limit Exceeded".as_bytes();
-                let content_length = body.len();
-                format!(
-                    "HTTP/1.1 429 Too Many Requests\r\n\
-                     Content-Type: text/plain\r\n\
-                     Content-Length: {}\r\n\r\n{}",
-                    content_length,
-                    String::from_utf8_lossy(body)
-                ).into_bytes()
-            };
+        Ok((headers, host))
+    }
 
-            response = self.modify_response_headers(response).await;
-            client_write.write_all(&response).await?;
-            return Ok(());
-        }
+    async fn handle_rate_limit_response(
+        &self,
+        client_write: &mut (impl AsyncWrite + Unpin),
+    ) -> Result<(), ProxyError> {
+        let response = if let Some(ref page) = self.rate_limit_page {
+            let body = page.as_bytes();
+            let content_length = body.len();
+            format!(
+                "HTTP/1.1 429 Too Many Requests\r\n\
+                 Content-Type: text/html\r\n\
+                 Content-Length: {}\r\n\r\n{}",
+                content_length,
+                String::from_utf8_lossy(body)
+            ).into_bytes()
+        } else {
+            let body = "Rate Limit Exceeded".as_bytes();
+            let content_length = body.len();
+            format!(
+                "HTTP/1.1 429 Too Many Requests\r\n\
+                 Content-Type: text/plain\r\n\
+                 Content-Length: {}\r\n\r\n{}",
+                content_length,
+                String::from_utf8_lossy(body)
+            ).into_bytes()
+        };
 
+        let response = self.modify_response_headers(response).await;
+        client_write.write_all(&response).await?;
+        Ok(())
+    }
+
+    async fn handle_proxy_connection(
+        &self,
+        mut client_read: impl AsyncRead + Unpin,
+        mut client_write: impl AsyncWrite + Unpin,
+        host: Option<String>,
+    ) -> Result<(), ProxyError> {
         let backend = self.get_least_loaded_backend(host.as_deref()).await
-            .ok_or("No available backends")?;
+            .ok_or(ProxyError::NoBackend)?;
 
         {
             let mut counter = backend.active_connections.write().await;
@@ -481,62 +535,109 @@ impl LoadBalancer {
         let server = TcpStream::connect(&backend.address).await?;
         let (mut server_read, mut server_write) = server.into_split();
 
-        let mut server_reader = tokio::io::BufReader::new(&mut server_read);
-
-        let client_to_server = tokio::io::copy(&mut client_read, &mut server_write);
-
-        let server_to_client = async {
-            let mut buffer = Vec::new();
-            let mut line = String::new();
-            let mut found_end = false;
-
-            loop {
-                line.clear();
-                if server_reader.read_line(&mut line).await? == 0 {
-                    break;
-                }
-                if line == "\r\n" {
-                    found_end = true;
-                    break;
-                }
-
-                if line.to_lowercase().starts_with("server:") {
-                    match &self.server_header {
-                        Some(new_header) if !new_header.is_empty() => {
-                            buffer.extend_from_slice(format!("Server: {}\r\n", new_header).as_bytes());
-                        }
-                        Some(_) => (),
-                        None => buffer.extend_from_slice(line.as_bytes()),
-                    }
-                } else {
-                    buffer.extend_from_slice(line.as_bytes());
-                }
-            }
-
-            if let Some(header) = &self.server_header {
-                if !header.is_empty() {
-                    buffer.extend_from_slice(format!("Server: {}\r\n", header).as_bytes());
-                }
-            }
-
-            if found_end {
-                buffer.extend_from_slice(b"\r\n");
-            }
-
-            client_write.write_all(&buffer).await?;
-
-            tokio::io::copy(&mut server_reader, &mut client_write).await?;
-            Ok::<_, std::io::Error>(())
-        };
-
-        let (client_result, server_result) = tokio::join!(client_to_server, server_to_client);
-        client_result?;
-        server_result?;
+        let result = self.proxy_data(
+            &mut client_read,
+            &mut client_write,
+            &mut server_read,
+            &mut server_write,
+        ).await;
 
         {
             let mut counter = backend.active_connections.write().await;
             *counter -= 1;
         }
+
+        result
+    }
+
+    async fn proxy_data(
+        &self,
+        client_read: &mut (impl AsyncRead + Unpin),
+        client_write: &mut (impl AsyncWrite + Unpin),
+        server_read: &mut (impl AsyncRead + Unpin),
+        server_write: &mut (impl AsyncWrite + Unpin),
+    ) -> Result<(), ProxyError> {
+        let client_to_server = tokio::io::copy(client_read, server_write);
+        let server_to_client = self.handle_server_response(server_read, client_write);
+
+        let (client_result, server_result) = tokio::join!(client_to_server, server_to_client);
+        client_result.map_err(ProxyError::from)?;
+        server_result.map_err(ProxyError::from)?;
+        Ok(())
+    }
+
+    async fn handle_server_response(
+        &self,
+        server_read: &mut (impl AsyncRead + Unpin),
+        client_write: &mut (impl AsyncWrite + Unpin),
+    ) -> Result<(), ProxyError> {
+        let mut server_reader = BufReader::new(server_read);
+        let mut buffer = Vec::new();
+        let mut line = String::new();
+        let mut found_end = false;
+
+        loop {
+            line.clear();
+            if server_reader.read_line(&mut line).await? == 0 {
+                break;
+            }
+            if line == "\r\n" {
+                found_end = true;
+                break;
+            }
+
+            if line.to_lowercase().starts_with("server:") {
+                match &self.server_header {
+                    Some(new_header) if !new_header.is_empty() => {
+                        buffer.extend_from_slice(format!("Server: {}\r\n", new_header).as_bytes());
+                    }
+                    Some(_) => (),
+                    None => buffer.extend_from_slice(line.as_bytes()),
+                }
+            } else {
+                buffer.extend_from_slice(line.as_bytes());
+            }
+        }
+
+        if let Some(header) = &self.server_header {
+            if !header.is_empty() {
+                buffer.extend_from_slice(format!("Server: {}\r\n", header).as_bytes());
+            }
+        }
+
+        if found_end {
+            buffer.extend_from_slice(b"\r\n");
+        }
+
+        client_write.write_all(&buffer).await?;
+        tokio::io::copy(&mut server_reader, client_write).await?;
+        Ok(())
+    }
+
+    async fn handle_connection(&self, stream: TcpStream) -> Result<(), ProxyError> {
+        let peer_addr = stream.peer_addr().map_err(ProxyError::Io)?;
+        let ip = peer_addr.ip().to_string();
+
+        // Check IP whitelist
+        if !self.check_ip_whitelist(&ip).await? {
+            return Ok(());
+        }
+
+        // Handle TLS if configured
+        let stream = self.setup_tls_stream(stream).await?;
+        let (mut client_read, mut client_write) = stream.into_split().await;
+
+        // Parse request headers
+        let (_headers, host) = self.parse_request_headers(&mut client_read).await?;
+
+        // Check rate limiting
+        if self.check_rate_limit(&ip).await.map_err(|e| ProxyError::Other(e.to_string()))? {
+            self.handle_rate_limit_response(&mut client_write).await?;
+            return Ok(());
+        }
+
+        // Get backend and handle proxying
+        self.handle_proxy_connection(client_read, client_write, host).await?;
 
         Ok(())
     }
