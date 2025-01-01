@@ -105,13 +105,13 @@ fn parse_bind_address(s: &str) -> Result<String, String> {
     Ok(format!("{}:{}", host, parts[1]))
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct Backend {
     address: String,
     active_connections: Arc<RwLock<u32>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct BackendGroup {
     backends: Vec<Backend>,
 }
@@ -142,7 +142,6 @@ impl From<std::io::Error> for ProxyError {
         ProxyError::Io(e)
     }
 }
-
 
 struct LoadBalancer {
     backend_groups: Arc<RwLock<HashMap<String, BackendGroup>>>,
@@ -540,13 +539,6 @@ impl LoadBalancer {
             return Ok(());
         }
     
-        println!("-----");
-        println!("IP: {}", request_ip_address);
-        if let Some(ref request_host) = request_host {
-            println!("Host: {}", request_host);
-        }
-        println!("-----");
-    
         if !self.check_ip_whitelist(&request_ip_address).await? {
             return Ok(());
         }
@@ -555,9 +547,7 @@ impl LoadBalancer {
             .get_least_loaded_backend(request_host)
             .await
             .ok_or("No available backends")?;
-    
-        println!("{:#?}", backend);
-    
+        
         {
             let mut counter = backend.active_connections.write().await;
             *counter += 1;
