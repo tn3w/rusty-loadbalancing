@@ -7,23 +7,20 @@ use redis::{Client, Commands};
 use rustls::{Certificate as RustlsCert, PrivateKey, ServerConfig};
 use sha2::{Digest, Sha256};
 use std::{
-    fs, fmt,
-    collections::HashMap,
-    net::IpAddr,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-    error::Error
+    collections::HashMap, error::Error, fmt, fs, net::IpAddr, path::PathBuf, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     runtime::Handle,
     sync::RwLock,
     time::sleep,
 };
+use tokio::io::AsyncReadExt;
 use tokio_rustls::{rustls, TlsAcceptor};
 
+mod ip_validator;
+use ip_validator::{is_valid_public_ip, strip_port};
 
 static LOGO: &str = r#"
 ░░       ░░░  ░░░░  ░░░      ░░░        ░░  ░░░░  ░
@@ -114,7 +111,7 @@ struct Backend {
     active_connections: Arc<RwLock<u32>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct BackendGroup {
     backends: Vec<Backend>,
 }
@@ -381,12 +378,12 @@ impl LoadBalancer {
         networks.iter().any(|network| network.contains(ip))
     }
 
-    async fn get_least_loaded_backend(&self, host: Option<&str>) -> Option<Backend> {
+    async fn get_least_loaded_backend(&self, host: Option<String>) -> Option<Backend> {
         let groups = self.backend_groups.read().await;
         let default_group = self.default_backends.read().await;
 
         let backends = if let Some(host) = host {
-            if let Some(group) = groups.get(host) {
+            if let Some(group) = groups.get(&host) {
                 &group.backends
             } else {
                 let domain_parts: Vec<&str> = host.split('.').collect();
@@ -452,41 +449,6 @@ impl LoadBalancer {
         Ok(self.is_ip_whitelisted(parsed_ip, &networks))
     }
 
-    async fn setup_tls_stream(&self, stream: TcpStream) -> Result<StreamType, ProxyError> {
-        Ok(match &self.tls_acceptor {
-            Some(acceptor) => {
-                let tls_stream = acceptor.accept(stream)
-                    .await
-                    .map_err(|e| ProxyError::Tls(e.to_string()))?;
-                Tls(tls_stream)
-            }
-            None => Plain(stream),
-        })
-    }
-
-    async fn parse_request_headers(
-        &self,
-        client_read: &mut (impl AsyncRead + Unpin),
-    ) -> Result<(Vec<u8>, Option<String>), ProxyError> {
-        let mut headers = Vec::new();
-        let mut host = None;
-        let mut reader = BufReader::new(client_read);
-        let mut line = String::new();
-
-        while let Ok(n) = reader.read_line(&mut line).await {
-            if n == 0 || line == "\r\n" {
-                break;
-            }
-            if line.to_lowercase().starts_with("host:") {
-                host = line.split(':').nth(1).map(|s| s.trim().to_string());
-            }
-            headers.extend_from_slice(line.as_bytes());
-            line.clear();
-        }
-
-        Ok((headers, host))
-    }
-
     async fn handle_rate_limit_response(
         &self,
         client_write: &mut (impl AsyncWrite + Unpin),
@@ -518,133 +480,188 @@ impl LoadBalancer {
         Ok(())
     }
 
-    async fn handle_proxy_connection(
-        &self,
-        mut client_read: impl AsyncRead + Unpin,
-        mut client_write: impl AsyncWrite + Unpin,
-        host: Option<String>,
-    ) -> Result<(), ProxyError> {
-        let backend = self.get_least_loaded_backend(host.as_deref()).await
-            .ok_or(ProxyError::NoBackend)?;
+    fn find_headers_end(buffer: &[u8]) -> Option<usize> {
+        buffer.windows(4)
+            .position(|window| window == b"\r\n\r\n")
+    }
 
+    async fn handle_connection(&self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+        let peer_addr = stream.peer_addr()?;
+        let mut request_ip_address = peer_addr.ip().to_string();
+        let mut request_host: Option<String> = None;
+    
+        let stream = match &self.tls_acceptor {
+            Some(acceptor) => Tls(acceptor.accept(stream).await?),
+            None => Plain(stream),
+        };
+    
+        let (mut client_read, mut client_write) = stream.into_split().await;
+    
+        let mut first_buffer = vec![0; 8192];
+        let bytes_read = client_read.read(&mut first_buffer).await?;
+    
+        if bytes_read == 0 {
+            return Err("Connection closed by the client".into());
+        }
+    
+        let mut initial_request = first_buffer[..bytes_read].to_vec();
+    
+        let mut headers = [httparse::EMPTY_HEADER; 64];
+        let mut request = httparse::Request::new(&mut headers); // FIXME: Remove httparse as it is unoptimized for this szenario
+    
+        if let Ok(_) = request.parse(&initial_request) {
+            for header in request.headers {
+                match header.name.to_lowercase().as_str() {
+                    "x-forwarded-for" => {
+                        if let Ok(forwarded_for) = std::str::from_utf8(header.value) {
+                            if let Some(first_ip) = forwarded_for.split(',').next() {
+                                if is_valid_public_ip(first_ip.trim()) {
+                                    request_ip_address = first_ip.trim().to_string();
+                                }
+                            }
+                        }
+                    }
+                    "host" => {
+                        if let Ok(host) = std::str::from_utf8(header.value) {
+                            request_host = Some(strip_port(host.trim()));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    
+        if self
+            .check_rate_limit(&request_ip_address)
+            .await
+            .map_err(|e| ProxyError::Other(e.to_string()))?
+        {
+            self.handle_rate_limit_response(&mut client_write).await?;
+            return Ok(());
+        }
+    
+        println!("-----");
+        println!("IP: {}", request_ip_address);
+        if let Some(ref request_host) = request_host {
+            println!("Host: {}", request_host);
+        }
+        println!("-----");
+    
+        if !self.check_ip_whitelist(&request_ip_address).await? {
+            return Ok(());
+        }
+        
+        let backend = self
+            .get_least_loaded_backend(request_host)
+            .await
+            .ok_or("No available backends")?;
+    
+        println!("{:#?}", backend);
+    
         {
             let mut counter = backend.active_connections.write().await;
             *counter += 1;
         }
-
+        
         let server = TcpStream::connect(&backend.address).await?;
         let (mut server_read, mut server_write) = server.into_split();
-
-        let result = self.proxy_data(
-            &mut client_read,
-            &mut client_write,
-            &mut server_read,
-            &mut server_write,
-        ).await;
-
+        
+        if Self::find_headers_end(&initial_request).is_none() {
+            let mut temp_buffer = [0; 8192];
+    
+            while let Ok(n) = client_read.read(&mut temp_buffer).await {
+                if n == 0 {
+                    break;
+                }
+    
+                initial_request.extend_from_slice(&temp_buffer[..n]);
+    
+                if Self::find_headers_end(&initial_request).is_some() {
+                    break;
+                }
+            }
+        }
+    
+        server_write.write_all(&initial_request).await?;
+    
+        let mut temp_buffer = [0; 8192];
+        let mut headers_buffer = Vec::new();
+        let mut headers_complete = false;
+    
+        while let Ok(n) = server_read.read(&mut temp_buffer).await {
+            if n == 0 {
+                break;
+            }
+    
+            headers_buffer.extend_from_slice(&temp_buffer[..n]);
+    
+            if let Some(pos) = Self::find_headers_end(&headers_buffer) {
+                if let Ok(headers_str) = String::from_utf8(headers_buffer[..pos].to_vec()) {
+                    let mut modified_headers = Vec::new();
+                    let found_server_header = false;
+    
+                    for line in headers_str.lines() {
+                        if line.to_lowercase().starts_with("server:") {
+                            match &self.server_header {
+                                Some(new_header) if !new_header.is_empty() => {
+                                    modified_headers.extend_from_slice(format!("Server: {}\r\n", new_header).as_bytes());
+                                }
+                                Some(_) => (),
+                                None => modified_headers.extend_from_slice(format!("{}\r\n", line).as_bytes()),
+                            }
+                        } else {
+                            modified_headers.extend_from_slice(format!("{}\r\n", line).as_bytes());
+                        }
+                    }
+    
+                    if !found_server_header
+                        && self
+                            .server_header
+                            .as_ref()
+                            .map_or(false, |h| !h.is_empty())
+                    {
+                        modified_headers.extend_from_slice(
+                            format!(
+                                "Server: {}\r\n",
+                                self.server_header.as_ref().unwrap()
+                            )
+                            .as_bytes(),
+                        );
+                    }
+    
+                    modified_headers.extend_from_slice(b"\r\n");
+                    client_write.write_all(&modified_headers).await?;
+    
+                    if headers_buffer.len() > pos + 4 {
+                        client_write.write_all(&headers_buffer[pos + 4..]).await?;
+                    }
+    
+                    headers_complete = true;
+                    break;
+                }
+            }
+        }
+        
+        if headers_complete {
+            let (client_to_server, server_to_client) = tokio::join!(
+                tokio::io::copy(&mut client_read, &mut server_write),
+                tokio::io::copy(&mut server_read, &mut client_write)
+            );
+            let _ = client_to_server;
+            let _ = server_to_client;
+        }
+        
         {
             let mut counter = backend.active_connections.write().await;
             *counter -= 1;
         }
-
-        result
-    }
-
-    async fn proxy_data(
-        &self,
-        client_read: &mut (impl AsyncRead + Unpin),
-        client_write: &mut (impl AsyncWrite + Unpin),
-        server_read: &mut (impl AsyncRead + Unpin),
-        server_write: &mut (impl AsyncWrite + Unpin),
-    ) -> Result<(), ProxyError> {
-        let client_to_server = tokio::io::copy(client_read, server_write);
-        let server_to_client = self.handle_server_response(server_read, client_write);
-
-        let (client_result, server_result) = tokio::join!(client_to_server, server_to_client);
-        client_result.map_err(ProxyError::from)?;
-        server_result.map_err(ProxyError::from)?;
-        Ok(())
-    }
-
-    async fn handle_server_response(
-        &self,
-        server_read: &mut (impl AsyncRead + Unpin),
-        client_write: &mut (impl AsyncWrite + Unpin),
-    ) -> Result<(), ProxyError> {
-        let mut server_reader = BufReader::new(server_read);
-        let mut buffer = Vec::new();
-        let mut line = String::new();
-        let mut found_end = false;
-
-        loop {
-            line.clear();
-            if server_reader.read_line(&mut line).await? == 0 {
-                break;
-            }
-            if line == "\r\n" {
-                found_end = true;
-                break;
-            }
-
-            if line.to_lowercase().starts_with("server:") {
-                match &self.server_header {
-                    Some(new_header) if !new_header.is_empty() => {
-                        buffer.extend_from_slice(format!("Server: {}\r\n", new_header).as_bytes());
-                    }
-                    Some(_) => (),
-                    None => buffer.extend_from_slice(line.as_bytes()),
-                }
-            } else {
-                buffer.extend_from_slice(line.as_bytes());
-            }
-        }
-
-        if let Some(header) = &self.server_header {
-            if !header.is_empty() {
-                buffer.extend_from_slice(format!("Server: {}\r\n", header).as_bytes());
-            }
-        }
-
-        if found_end {
-            buffer.extend_from_slice(b"\r\n");
-        }
-
-        client_write.write_all(&buffer).await?;
-        tokio::io::copy(&mut server_reader, client_write).await?;
-        Ok(())
-    }
-
-    async fn handle_connection(&self, stream: TcpStream) -> Result<(), ProxyError> {
-        let peer_addr = stream.peer_addr().map_err(ProxyError::Io)?;
-        let ip = peer_addr.ip().to_string();
-
-        // Check IP whitelist
-        if !self.check_ip_whitelist(&ip).await? {
-            return Ok(());
-        }
-
-        // Handle TLS if configured
-        let stream = self.setup_tls_stream(stream).await?;
-        let (mut client_read, mut client_write) = stream.into_split().await;
-
-        // Parse request headers
-        let (_headers, host) = self.parse_request_headers(&mut client_read).await?;
-
-        // Check rate limiting
-        if self.check_rate_limit(&ip).await.map_err(|e| ProxyError::Other(e.to_string()))? {
-            self.handle_rate_limit_response(&mut client_write).await?;
-            return Ok(());
-        }
-
-        // Get backend and handle proxying
-        self.handle_proxy_connection(client_read, client_write, host).await?;
-
+    
         Ok(())
     }
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     println!("{}", LOGO);
 
     let args = Args::parse();
@@ -660,9 +677,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = TcpListener::bind(&args.bind).await?;
     println!(
-        "Listening on {}://{}",
+        "Listening on {}://{} with {} workers",
         if lb.tls_acceptor.is_some() { "https" } else { "http" },
-        args.bind
+        args.bind, args.workers
     );
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(args.workers));
