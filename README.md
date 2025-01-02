@@ -33,7 +33,6 @@
 
     ```bash
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    export PATH="$HOME/.cargo/bin:$PATH"
     ```
 
 2. Setup Redis
@@ -147,7 +146,6 @@ sudo apt-get update
 sudo apt-get install git curl build-essential -y
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.bashrc
-export PATH="$HOME/.cargo/bin:$PATH"
 
 sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz
 sudo tar -xzvf redis-stable.tar.gz; cd redis-stable
@@ -176,7 +174,7 @@ sudo rm -rf redis-stable
 
 sudo git clone https://github.com/tn3w/rusty-loadbalancing.git
 cd rusty-loadbalancing
-sudo cargo build --release
+sudo PATH="$HOME/.cargo/bin:$PATH" cargo build --release
 sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing
 cd ..
 sudo rm -rf rusty-loadbalancing
