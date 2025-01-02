@@ -91,7 +91,7 @@
     ``` 
 
     ```bash
-    sudo git clone https://github.com/tn3w/rusty-loadbalancing.git
+    git clone https://github.com/tn3w/rusty-loadbalancing.git
     ```
 
 4. Move into the project folder:
@@ -172,7 +172,7 @@ cd ..
 sudo rm redis-stable.tar.gz
 sudo rm -rf redis-stable
 
-sudo git clone https://github.com/tn3w/rusty-loadbalancing.git
+git clone https://github.com/tn3w/rusty-loadbalancing.git
 cd rusty-loadbalancing
 cargo build --release
 sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing
