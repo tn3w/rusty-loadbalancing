@@ -11,7 +11,14 @@
 
 
 ## 🚀 Installing
-1. Install Rust using rust-up (optional): 
+1. Install Rust using rust-up (optional):
+
+    Install curl (optional):
+    ```bash
+    sudo apt-get update
+    sudo apt-get install curl -y
+    ``` 
+
     ```bash
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     ```
@@ -26,15 +33,15 @@
 
     **OR build Redis from source:**
 
-    Install wget and build-essentials (optional):
+    Install build-essentials (optional):
     ```bash
     sudo apt-get update
-    sudo apt-get install wget build-essential -y
+    sudo apt-get install build-essential -y
     ```
 
     Build Redis from source:
     ```bash
-    wget https://download.redis.io/redis-stable.tar.gz
+    curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz
     tar -xzvf redis-stable.tar.gz
     cd redis-stable
     sudo make install
@@ -86,13 +93,13 @@
 
     Remove rust, cargo, build-essentials and wget:
     ```
-    sudo apt purge rust cargo build-essential wget -y
+    sudo apt purge rust cargo build-essential curl -y
     sudo apt autoremove
     ```
 
 Quick command (for Ubuntu/Debian):
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh; sudo apt-get update; sudo apt-get install wget build-essential -y; wget https://download.redis.io/redis-stable.tar.gz; tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo systemctl enable redis-server.service; sudo systemctl start redis-server.service; cd ..; rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; rm -rf rusty-loadbalancing; rusty-loadbalancing --help
+sudo apt-get update; sudo apt-get install wget build-essential -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh; curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo systemctl enable redis-server.service; sudo systemctl start redis-server.service; cd ..; rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
 
