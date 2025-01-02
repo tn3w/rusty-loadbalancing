@@ -10,7 +10,19 @@
 <p align="center">A fast, efficient, and small load balancing tool written in Rust. It implements a least-connections algorithm and uses Redis for storing server locations.</p>
 
 
-## 🚀 Installing
+## Content Table
+- [Content Table]()
+- [Installing]()
+    - [Quick commands]()
+- [Documentation]()
+    - [CLI]()
+    - [Backend Server Mapping]()
+    - [IP Allowlist / Network Whitelisting]()
+    - [Examples]()
+- [Attribution]()
+
+
+## Installing
 1. Install Rust using rust-up (optional):
 
     Install curl (optional):
@@ -48,7 +60,7 @@
     redis-server & # or setup services
     ```
 
-    **And setup services: (optional)**
+    **AND setup services: (optional)**
     ```bash
     sudo systemctl enable redis-server.service
     sudo systemctl start redis-server.service
@@ -97,13 +109,100 @@
     sudo apt autoremove
     ```
 
-Quick command (for Ubuntu/Debian):
+### Quick commands 
+Ubuntu/Debian:
 ```bash
 sudo apt-get update; sudo apt-get install wget build-essential -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh; curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo systemctl enable redis-server.service; sudo systemctl start redis-server.service; cd ..; rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
+Fedora:
+```bash
+sudo dnf update -y; sudo dnf groupinstall "Development Tools" -y; sudo dnf install wget curl -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh; curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo systemctl enable redis-server.service; sudo systemctl start redis-server.service; cd ..; rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; rm -rf rusty-loadbalancing; rusty-loadbalancing --help
+```
 
-## CLI
+CentOS/RHEL
+```bash
+sudo yum update -y; sudo yum groupinstall "Development Tools" -y; sudo yum install wget curl -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh; curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo systemctl enable redis-server.service; sudo systemctl start redis-server.service; cd ..; rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; rm -rf rusty-loadbalancing; rusty-loadbalancing --help
+```
+
+Arch Linux
+```bash
+sudo pacman -Syu --noconfirm; sudo pacman -S --noconfirm base-devel wget curl; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh; curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo systemctl enable redis-server.service; sudo systemctl start redis-server.service; cd ..; rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; rm -rf rusty-loadbalancing; rusty-loadbalancing --help
+```
+
+openSUSE
+```bash
+sudo zypper refresh; sudo zypper install -y gcc make wget curl; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh; curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo systemctl enable redis-server.service; sudo systemctl start redis-server.service; cd ..; rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; rm -rf rusty-loadbalancing; rusty-loadbalancing --help
+```
+
+Windows Powershell:
+```powershell
+# Allow running scripts from untrusted source temporarily
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
+# Set SecurityProtocol to include TLS 1.2 temporarily
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+
+# Install Chocolatey (if not already installed)
+if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+}
+
+# Update Chocolatey and wget, git, make and redis
+choco upgrade chocolatey -y
+choco install wget git make redis-64 -y
+
+# Start Redis as a background service
+redis-server --service-install
+redis-server --service-start
+
+# Install Rust using rustup
+Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://sh.rustup.rs')) -NoProfile
+
+# Clone and build the rusty-loadbalancing project
+git clone https://github.com/tn3w/rusty-loadbalancing.git
+cd rusty-loadbalancing
+cargo build --release
+
+# Move the executable to a directory in the PATH
+Move-Item .\target\release\rusty-loadbalancing.exe "C:\Program Files\rusty-loadbalancing.exe"
+
+# Clean up the cloned repository
+cd ..
+Remove-Item -Recurse -Force rusty-loadbalancing
+
+# Test the executable
+rusty-loadbalancing --help
+```
+
+macOS:
+```bash
+# Install Homebrew if not already installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Update Homebrew and install dependencies
+brew update
+brew install wget curl rust git redis
+
+# Set up Redis
+brew services start redis
+
+# Clone and build the project
+git clone https://github.com/tn3w/rusty-loadbalancing.git
+cd rusty-loadbalancing
+cargo build --release
+
+# Move the binary to a location in PATH
+sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing
+cd ..
+rm -rf rusty-loadbalancing
+
+# Verify installation
+rusty-loadbalancing --help
+```
+
+## Documentation
+### CLI
 ```
 ░░       ░░░  ░░░░  ░░░      ░░░        ░░  ░░░░  ░
 ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒  ▒▒  ▒▒
@@ -160,7 +259,7 @@ redis-cli RPUSH rusty:whitelisted_ips "103.21.244.0/22"
 redis-cli RPUSH rusty:whitelisted_ips "2400:cb00::/32"
 ```
 
-## Examples
+### Examples
 Commands using redis-cli:
 ```bash
 # Add backend server
@@ -193,5 +292,5 @@ for server in servers:
 
 This process can be initiated when the web server starts up, adding it to the list, and it can be removed from the list upon termination.
 
-### Attribution
+## Attribution
 - Logo icon: [Rust icons created by Freepik - Flaticon](https://www.flaticon.com/free-icons/rust)
