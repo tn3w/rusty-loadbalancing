@@ -101,7 +101,7 @@
 
 5. Build rusty-loadbalancing
     ```bash
-    cargo build --release
+    sudo cargo build --release
     ```
 
 6. Move executable into /usr/local/bin (optional)
@@ -167,7 +167,7 @@ sudo rm -rf redis-stable
 
 sudo git clone https://github.com/tn3w/rusty-loadbalancing.git
 cd rusty-loadbalancing
-cargo build --release
+sudo cargo build --release
 sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing
 cd ..
 sudo rm -rf rusty-loadbalancing
