@@ -62,6 +62,7 @@
 
     **AND setup services: (optional)**
     ```bash
+    sudo adduser --system --group --no-create-home redis
     sudo bash -c 'cat > /etc/systemd/system/redis.service <<EOF
     [Unit]
     Description=Redis In-Memory Data Store
@@ -192,6 +193,7 @@ source ~/.bashrc
 sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz
 sudo tar -xzvf redis-stable.tar.gz; cd redis-stable
 sudo make install
+sudo adduser --system --group --no-create-home redis
 sudo bash -c 'cat > /etc/systemd/system/redis.service <<EOF
 [Unit]
 Description=Redis In-Memory Data Store
