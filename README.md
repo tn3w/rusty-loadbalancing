@@ -100,6 +100,13 @@
     ```
 
 5. Build rusty-loadbalancing
+
+    Install git (optional):
+    ```bash
+    sudo apt-get update
+    sudo apt-get install cargo -y
+    ``` 
+
     ```bash
     sudo cargo build --release
     ```
@@ -136,7 +143,7 @@
 Ubuntu/Debian:
 ```bash
 sudo apt-get update
-sudo apt-get install git curl build-essential -y
+sudo apt-get install cargo git curl build-essential -y
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.bashrc
 
