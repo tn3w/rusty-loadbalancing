@@ -32,7 +32,7 @@
     ``` 
 
     ```bash
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     ```
 
 2. Setup Redis
@@ -144,7 +144,7 @@ Ubuntu/Debian:
 ```bash
 sudo apt-get update
 sudo apt-get install cargo git curl build-essential -y
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.bashrc
 
 sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz
