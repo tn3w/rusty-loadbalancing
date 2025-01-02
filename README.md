@@ -138,6 +138,7 @@ Ubuntu/Debian:
 sudo apt-get update
 sudo apt-get install git curl build-essential -y
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.bashrc
 
 sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz
 sudo tar -xzvf redis-stable.tar.gz; cd redis-stable
