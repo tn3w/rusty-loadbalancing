@@ -241,7 +241,7 @@ if (Is-BuildToolsInstalled) {
     # Download the installer
     Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
 
-    Write-Host "Installing Visual Studio Build Tools..."
+    Write-Host "Installing Visual Studio Build Tools, this may take a long time..."
     
     # Start installation
     Start-Process -FilePath ".\vs_buildtools.exe" `
