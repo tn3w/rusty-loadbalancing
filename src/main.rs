@@ -536,26 +536,26 @@ impl LoadBalancer {
         let peer_addr = stream.peer_addr()?;
         let mut request_ip_address = peer_addr.ip().to_string();
         let mut request_host: Option<String> = None;
-    
+
         let stream = match &self.tls_acceptor {
             Some(acceptor) => Tls(acceptor.accept(stream).await?),
             None => Plain(stream),
         };
-    
+
         let (mut client_read, mut client_write) = stream.into_split().await;
-    
+
         let mut first_buffer = vec![0; 8192];
         let bytes_read = client_read.read(&mut first_buffer).await?;
-    
+
         if bytes_read == 0 {
             return Err("Connection closed by the client".into());
         }
-    
+
         let mut initial_request = first_buffer[..bytes_read].to_vec();
-    
+
         let mut headers = [httparse::EMPTY_HEADER; 64];
-        let mut request = httparse::Request::new(&mut headers); // FIXME: Remove httparse as it is unoptimized for this szenario
-    
+        let mut request = httparse::Request::new(&mut headers);
+
         if let Ok(_) = request.parse(&initial_request) {
             for header in request.headers {
                 match header.name.to_lowercase().as_str() {
@@ -577,7 +577,7 @@ impl LoadBalancer {
                 }
             }
         }
-    
+
         if self
             .check_rate_limit(&request_ip_address)
             .await
@@ -586,7 +586,7 @@ impl LoadBalancer {
             self.handle_rate_limit_response(&mut client_write).await?;
             return Ok(());
         }
-    
+
         if !self.check_ip_whitelist(&request_ip_address).await? {
             return Ok(());
         }
@@ -600,90 +600,76 @@ impl LoadBalancer {
             let mut counter = backend.active_connections.write().await;
             *counter += 1;
         }
-        
+
         let server = TcpStream::connect(&backend.address).await?;
         let (mut server_read, mut server_write) = server.into_split();
-        
+
         if Self::find_headers_end(&initial_request).is_none() {
             let mut temp_buffer = [0; 8192];
-    
+
             while let Ok(n) = client_read.read(&mut temp_buffer).await {
                 if n == 0 {
                     break;
                 }
-    
+
                 initial_request.extend_from_slice(&temp_buffer[..n]);
-    
+
                 if Self::find_headers_end(&initial_request).is_some() {
                     break;
                 }
             }
         }
-    
-        server_write.write_all(&initial_request).await?;
-    
-        let mut temp_buffer = [0; 8192];
-        let mut headers_buffer = Vec::new();
-        let mut headers_sent = false;
 
+        server_write.write_all(&initial_request).await?;
+
+        let mut response_buffer = Vec::new();
+        let mut headers_complete = false;
+        
         loop {
-            let n = match server_read.read(&mut temp_buffer).await {
-                Ok(0) => break,
-                Ok(n) => n,
-                Err(e) => return Err(e.into()),
-            };
-        
-            headers_buffer.extend_from_slice(&temp_buffer[..n]);
-        
-            if !headers_sent {
-                if let Some(pos) = Self::find_headers_end(&headers_buffer) {
-                    if let Ok(headers_str) = String::from_utf8(headers_buffer[..pos].to_vec()) {
-                        let modified_headers = self.modify_headers(&headers_str);
-                        client_write.write_all(&modified_headers).await?;
-                        
-                        if headers_buffer.len() > pos + 4 {
-                            client_write.write_all(&headers_buffer[pos + 4..]).await?;
-                        }
-                        
-                        headers_sent = true;
-                        headers_buffer.clear();
-                        
-                        let (client_to_server, server_to_client) = tokio::join!(
-                            tokio::io::copy(&mut client_read, &mut server_write),
-                            async {
-                                let mut buf = [0u8; 8192];
-                                let mut total = 0u64;
-                                loop {
-                                    match server_read.read(&mut buf).await {
-                                        Ok(0) => break Ok(total),
-                                        Ok(n) => {
-                                            client_write.write_all(&buf[..n]).await?;
-                                            total += n as u64;
-                                        }
-                                        Err(e) => break Err(e),
-                                    }
-                                }
-                            }
-                        );
-        
-                        if let Err(e) = client_to_server {
-                            eprintln!("Error in client to server copy: {}", e);
-                        }
-                        if let Err(e) = server_to_client {
-                            eprintln!("Error in server to client copy: {}", e);
-                        }
-                        
-                        break;
+            let mut chunk = vec![0; 8192];
+            match server_read.read(&mut chunk).await {
+                Ok(0) => {
+                    if !headers_complete {
+                        return Err("Server closed connection before sending complete headers".into());
                     }
+                    break;
+                }
+                Ok(n) => {
+                    if !headers_complete {
+                        response_buffer.extend_from_slice(&chunk[..n]);
+                        
+                        if let Some(headers_end) = Self::find_headers_end(&response_buffer) {
+                            let headers_data = &response_buffer[..headers_end];
+                            if let Ok(headers_str) = String::from_utf8(headers_data.to_vec()) {
+                                let modified_headers = self.modify_headers(&headers_str);
+                                client_write.write_all(&modified_headers).await?;
+                            }
+                            
+                            if response_buffer.len() > headers_end + 4 {
+                                client_write.write_all(&response_buffer[headers_end + 4..]).await?;
+                            }
+                            
+                            headers_complete = true;
+                            response_buffer.clear();
+                        }
+                    } else {
+                        client_write.write_all(&chunk[..n]).await?;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error reading from server: {}", e);
+                    return Err(e.into());
                 }
             }
         }
+
+        client_write.flush().await?;
 
         {
             let mut counter = backend.active_connections.write().await;
             *counter -= 1;
         }
-        
+
         Ok(())
     }
 }
