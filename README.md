@@ -278,7 +278,7 @@ cd ..
 Remove-Item -Recurse -Force rusty-loadbalancing
 
 # Test the executable
-rusty-loadbalancing --help
+& "C:\Program Files\rusty-loadbalancing.exe" --help
 ```
 
 Ubuntu/Debian:
