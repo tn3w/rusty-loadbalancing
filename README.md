@@ -143,6 +143,8 @@
 ### Quick commands
 Windows Powershell:
 ```powershell
+cd ~
+
 # Allow running scripts from untrusted source temporarily
 Set-ExecutionPolicy Bypass -Scope Process -Force
 
@@ -179,6 +181,17 @@ Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
 
 # Delete the installer file
 Remove-Item rustup-init.exe
+
+Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
+
+# Install Build Tools with necessary components
+.\vs_buildtools.exe --quiet --wait --norestart --nocache `
+    --installPath "C:\BuildTools" `
+    --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+    --add Microsoft.VisualStudio.Component.Windows10SDK.19041
+
+# Delete the installer
+Remove-Item vs_buildtools.exe
 
 # Refresh variables
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
