@@ -14,6 +14,13 @@
 - [Content Table](#content-table)
 - [Installing](#installing)
     - [Quick commands](#quick-commands)
+        - [Windows](#windows-powershell)
+        - [macOS (not tested)](#macos-not-tested)
+        - [Ubuntu/Debian](#ubuntudebian)
+        - [Fedora](#fedora)
+        - [CentOS/RHEL](#centosrhel)
+        - [Arch Linux](#arch-linux)
+        - [openSUSE](#opensuse)
 - [Documentation](#documentation)
     - [CLI](#cli)
     - [Backend Server Mapping](#backend-server-mapping)
@@ -141,194 +148,74 @@
     ```
 
 ### Quick commands
-Windows Powershell:
+#### Windows Powershell:
 ```powershell
-cd ~
+cd ~; Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))}; choco upgrade chocolatey -y; choco install git redis -y; $TaskName="Redis Server"; $Action=New-ScheduledTaskAction -Execute "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe"; $Trigger=New-ScheduledTaskTrigger -AtStartup; $Principal=New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest; if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue}; Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal; function Is-RedisRunning {Get-Process -Name "redis-server" -ErrorAction SilentlyContinue -ne $null}; if (Is-RedisRunning) {Write-Host "Redis is already running."} else {Start-Process "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe" -WindowStyle Hidden; Start-Sleep -Seconds 2; if (-not (Is-RedisRunning)) {Write-Error "Failed to start Redis server."}}; function Is-RustInstalled {& rustc --version 2>$null -match "^rustc"}; if (-not (Is-RustInstalled)) {Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe; Start-Process -FilePath ".\rustup-init.exe" -ArgumentList "-y" -Wait; Remove-Item rustup-init.exe -Force}; function Is-BuildToolsInstalled {& "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath -ne $null}; if (-not (Is-BuildToolsInstalled)) {Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"; Start-Process -FilePath ".\vs_buildtools.exe" -ArgumentList "--quiet", "--norestart", "--nocache", "--installPath", "C:\BuildTools", "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041" -Wait; Remove-Item -Path "vs_buildtools.exe" -Force}; $env:Path=[System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User"); git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; Move-Item .\target\release\rusty-loadbalancing.exe "C:\Program Files\rusty-loadbalancing.exe"; cd ..; Remove-Item -Recurse -Force rusty-loadbalancing
+```
 
-# Allow running scripts from untrusted source temporarily
-Set-ExecutionPolicy Bypass -Scope Process -Force
-
-# Set SecurityProtocol to include TLS 1.2 temporarily
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-
-# Install Chocolatey (if not already installed)
-if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-}
-
-# Update Chocolatey and curl, git, make and redis
-choco upgrade chocolatey -y
-choco install curl git redis -y
-
-# Start Redis as a background service
-# Define task details
-$TaskName = "Redis Server"
-$Action = New-ScheduledTaskAction -Execute "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe"
-$Trigger = New-ScheduledTaskTrigger -AtStartup
-$Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-
-# Check if the task already exists
-if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    Write-Host "Scheduled task '$TaskName' already exists. Removing the existing task..."
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-}
-
-# Register the new task
-Write-Host "Registering the scheduled task '$TaskName'..."
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal
-Write-Host "Scheduled task '$TaskName' registered successfully."
-
-function Is-RedisRunning {
-    $redisProcess = Get-Process -Name "redis-server" -ErrorAction SilentlyContinue
-    return $redisProcess -ne $null
-}
-
-# Start Redis server if not already running
-if (Is-RedisRunning) {
-    Write-Host "Redis is already running."
-} else {
-    Write-Host "Starting Redis server..."
-    Start-Process "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe" -WindowStyle Hidden
-    Start-Sleep -Seconds 2  # Give some time for Redis to initialize
-    if (Is-RedisRunning) {
-        Write-Host "Redis server started successfully."
-    } else {
-        Write-Error "Failed to start Redis server."
-    }
-}
-
-function Is-RustInstalled {
-    $rustVersion = & rustc --version 2>$null
-    return $rustVersion -match "^rustc"
-}
-
-# Install Rust if not already installed
-if (Is-RustInstalled) {
-    Write-Host "Rust is already installed."
-} else {
-    Write-Host "Downloading and installing Rust..."
-    
-    # Download Rustup installer
-    Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
-
-    # Run the installer and wait for it to complete
-    Start-Process -FilePath ".\rustup-init.exe" -ArgumentList "-y" -Wait
-
-    # Check if installation succeeded
-    if (Is-RustInstalled) {
-        Write-Host "Rust installation completed successfully."
-    } else {
-        Write-Error "Rust installation failed. Please check the logs for details."
-    }
-
-    # Clean up the installer
-    Remove-Item rustup-init.exe -Force
-}
-
-function Is-BuildToolsInstalled {
-    $installedProducts = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" `
-        -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-        -property installationPath
-    return $installedProducts -ne $null
-}
-
-# Check if Build Tools is installed
-if (Is-BuildToolsInstalled) {
-    Write-Host "Visual Studio Build Tools is already installed."
-} else {
-    Write-Host "Downloading Visual Studio Build Tools installer..."
-    
-    # Download the installer
-    Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
-
-    Write-Host "Installing Visual Studio Build Tools, this may take a long time..."
-    
-    # Start installation
-    Start-Process -FilePath ".\vs_buildtools.exe" `
-        -ArgumentList "--quiet", "--norestart", "--nocache", `
-        "--installPath", "C:\BuildTools", `
-        "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", `
-        "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041" `
-        -Wait
-
-    # Check the installation result
-    if (Is-BuildToolsInstalled) {
-        Write-Host "Visual Studio Build Tools installation completed successfully."
-    } else {
-        Write-Error "Installation failed. Please check the logs for details."
-    }
-
-    # Delete the installer
-    Remove-Item -Path "vs_buildtools.exe" -Force
-}
-
-# Refresh variables
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-
-# Clone and build the rusty-loadbalancing project
-git clone https://github.com/tn3w/rusty-loadbalancing.git
-cd rusty-loadbalancing
-cargo build --release
-
-# Move the executable to a directory in the PATH
-Move-Item .\target\release\rusty-loadbalancing.exe "C:\Program Files\rusty-loadbalancing.exe"
-
-# Clean up the cloned repository
-cd ..
-Remove-Item -Recurse -Force rusty-loadbalancing
-
-# Test the executable
+After using this command you can start the tool with the following command:
+```powershell
 & "C:\Program Files\rusty-loadbalancing.exe" --help
 ```
 
-Ubuntu/Debian:
+#### macOS (not tested):
+```bash
+/bin/bash -c "$(command -v brew &>/dev/null || /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\") && brew update && brew install rust git redis && brew services start redis && git clone https://github.com/tn3w/rusty-loadbalancing.git && cd rusty-loadbalancing && cargo build --release && sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing && cd .. && sudo rm -rf rusty-loadbalancing"
+```
+
+After using this command you can start the tool with the following command:
+```bash
+rusty-loadbalancing --help
+```
+
+
+#### Ubuntu/Debian:
 ```bash
 sudo apt-get update; sudo apt-get install git curl build-essential -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
-Fedora:
+After using this command you can start the tool with the following command:
+```bash
+rusty-loadbalancing --help
+```
+
+#### Fedora:
 ```bash
 sudo dnf update -y; sudo dnf groupinstall "Development Tools" -y; sudo dnf install git curl -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
-CentOS/RHEL
+After using this command you can start the tool with the following command:
+```bash
+rusty-loadbalancing --help
+```
+
+#### CentOS/RHEL
 ```bash
 sudo yum update -y; sudo yum groupinstall "Development Tools" -y; sudo yum install git curl -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
-Arch Linux
+After using this command you can start the tool with the following command:
+```bash
+rusty-loadbalancing --help
+```
+
+#### Arch Linux
 ```bash
 sudo pacman -Syu --noconfirm; sudo pacman -S --noconfirm git curl base-devel; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
-openSUSE
+After using this command you can start the tool with the following command:
+```bash
+rusty-loadbalancing --help
+```
+
+#### openSUSE
 ```bash
 sudo zypper refresh; sudo zypper install -y git curl gcc gcc-c++ make; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
-macOS:
+After using this command you can start the tool with the following command:
 ```bash
-# Install Homebrew if not already installed
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Update Homebrew and install dependencies
-brew update
-brew install rust git redis
-
-# Set up Redis
-brew services start redis
-
-# Clone and build the project
-sudo git clone https://github.com/tn3w/rusty-loadbalancing.git
-cd rusty-loadbalancing
-cargo build --release
-
-# Move the binary to a location in PATH
-sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing
-cd ..
-sudo rm -rf rusty-loadbalancing
-
-# Verify installation
 rusty-loadbalancing --help
 ```
 
