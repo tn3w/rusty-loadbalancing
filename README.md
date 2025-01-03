@@ -213,7 +213,7 @@ macOS:
 
 # Update Homebrew and install dependencies
 brew update
-brew install curl curl rust git redis
+brew install rust git redis
 
 # Set up Redis
 brew services start redis
