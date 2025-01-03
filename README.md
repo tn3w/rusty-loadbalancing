@@ -156,14 +156,32 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
 
 # Update Chocolatey and curl, git, make and redis
 choco upgrade chocolatey -y
-choco install curl git make redis-64 -y
+choco install curl git redis -y
 
 # Start Redis as a background service
-redis-server --service-install
-redis-server --service-start
+$Action = New-ScheduledTaskAction -Execute "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe"
+$Trigger = New-ScheduledTaskTrigger -AtStartup
+$Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+# Remove existing task if it exists
+Unregister-ScheduledTask -TaskName "Redis Server" -Confirm:$false -ErrorAction SilentlyContinue
+
+# Register the new task
+Register-ScheduledTask -TaskName "Redis Server" -Action $Action -Trigger $Trigger -Principal $Principal
+
+# Start Redis server now in the background
+Start-Process "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe" -WindowStyle Hidden -NoNewWindow
 
 # Install Rust using rustup
-Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://sh.rustup.rs')) -NoProfile
+Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
+Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
+.\rustup-init.exe -y
+
+# Delete the installer file
+Remove-Item rustup-init.exe
+
+# Refresh variables
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
 # Clone and build the rusty-loadbalancing project
 git clone https://github.com/tn3w/rusty-loadbalancing.git
