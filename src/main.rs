@@ -484,6 +484,54 @@ impl LoadBalancer {
             .position(|window| window == b"\r\n\r\n")
     }
 
+
+    fn modify_headers(&self, headers_str: &str) -> Vec<u8> {
+        let mut modified_headers = Vec::new();
+        let mut found_server_header = false;
+
+        for line in headers_str.lines() {
+            if line.is_empty() {
+                continue;
+            }
+
+            let lower_line = line.to_lowercase();
+            
+            if lower_line.starts_with("server:") {
+                found_server_header = true;
+                if let Some(new_header) = &self.server_header {
+                    if !new_header.is_empty() {
+                        modified_headers.extend_from_slice(
+                            format!("Server: {}\r\n", new_header).as_bytes()
+                        );
+                    }
+                } else {
+                    modified_headers.extend_from_slice(format!("{}\r\n", line).as_bytes());
+                }
+                continue;
+            }
+
+            if lower_line.starts_with("x-powered-by:") {
+                continue;
+            }
+
+            modified_headers.extend_from_slice(format!("{}\r\n", line).as_bytes());
+        }
+
+        if !found_server_header {
+            if let Some(header) = &self.server_header {
+                if !header.is_empty() {
+                    modified_headers.extend_from_slice(
+                        format!("Server: {}\r\n", header).as_bytes()
+                    );
+                }
+            }
+        }
+
+        modified_headers.extend_from_slice(b"\r\n");
+        
+        modified_headers
+    }
+
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
         let peer_addr = stream.peer_addr()?;
         let mut request_ip_address = peer_addr.ip().to_string();
@@ -576,76 +624,66 @@ impl LoadBalancer {
     
         let mut temp_buffer = [0; 8192];
         let mut headers_buffer = Vec::new();
-        let mut headers_complete = false;
-    
-        while let Ok(n) = server_read.read(&mut temp_buffer).await {
-            if n == 0 {
-                break;
-            }
-    
+        let mut headers_sent = false;
+
+        loop {
+            let n = match server_read.read(&mut temp_buffer).await {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) => return Err(e.into()),
+            };
+        
             headers_buffer.extend_from_slice(&temp_buffer[..n]);
-    
-            if let Some(pos) = Self::find_headers_end(&headers_buffer) {
-                if let Ok(headers_str) = String::from_utf8(headers_buffer[..pos].to_vec()) {
-                    let mut modified_headers = Vec::new();
-                    let found_server_header = false;
-    
-                    for line in headers_str.lines() {
-                        if line.to_lowercase().starts_with("server:") {
-                            match &self.server_header {
-                                Some(new_header) if !new_header.is_empty() => {
-                                    modified_headers.extend_from_slice(format!("Server: {}\r\n", new_header).as_bytes());
-                                }
-                                Some(_) => (),
-                                None => modified_headers.extend_from_slice(format!("{}\r\n", line).as_bytes()),
-                            }
-                        } else {
-                            modified_headers.extend_from_slice(format!("{}\r\n", line).as_bytes());
+        
+            if !headers_sent {
+                if let Some(pos) = Self::find_headers_end(&headers_buffer) {
+                    if let Ok(headers_str) = String::from_utf8(headers_buffer[..pos].to_vec()) {
+                        let modified_headers = self.modify_headers(&headers_str);
+                        client_write.write_all(&modified_headers).await?;
+                        
+                        if headers_buffer.len() > pos + 4 {
+                            client_write.write_all(&headers_buffer[pos + 4..]).await?;
                         }
-                    }
-    
-                    if !found_server_header
-                        && self
-                            .server_header
-                            .as_ref()
-                            .map_or(false, |h| !h.is_empty())
-                    {
-                        modified_headers.extend_from_slice(
-                            format!(
-                                "Server: {}\r\n",
-                                self.server_header.as_ref().unwrap()
-                            )
-                            .as_bytes(),
+                        
+                        headers_sent = true;
+                        headers_buffer.clear();
+                        
+                        let (client_to_server, server_to_client) = tokio::join!(
+                            tokio::io::copy(&mut client_read, &mut server_write),
+                            async {
+                                let mut buf = [0u8; 8192];
+                                let mut total = 0u64;
+                                loop {
+                                    match server_read.read(&mut buf).await {
+                                        Ok(0) => break Ok(total),
+                                        Ok(n) => {
+                                            client_write.write_all(&buf[..n]).await?;
+                                            total += n as u64;
+                                        }
+                                        Err(e) => break Err(e),
+                                    }
+                                }
+                            }
                         );
+        
+                        if let Err(e) = client_to_server {
+                            eprintln!("Error in client to server copy: {}", e);
+                        }
+                        if let Err(e) = server_to_client {
+                            eprintln!("Error in server to client copy: {}", e);
+                        }
+                        
+                        break;
                     }
-    
-                    modified_headers.extend_from_slice(b"\r\n");
-                    client_write.write_all(&modified_headers).await?;
-    
-                    if headers_buffer.len() > pos + 4 {
-                        client_write.write_all(&headers_buffer[pos + 4..]).await?;
-                    }
-    
-                    headers_complete = true;
-                    break;
                 }
             }
         }
-        
-        if headers_complete {
-            let (client_to_server, server_to_client) = tokio::join!(
-                tokio::io::copy(&mut client_read, &mut server_write),
-                tokio::io::copy(&mut server_read, &mut client_write)
-            );
-            let _ = client_to_server;
-            let _ = server_to_client;
-        }
-        
+
         {
             let mut counter = backend.active_connections.write().await;
             *counter -= 1;
         }
-    
+        
         Ok(())
     }
 }
