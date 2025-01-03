@@ -161,37 +161,106 @@ choco upgrade chocolatey -y
 choco install curl git redis -y
 
 # Start Redis as a background service
+# Define task details
+$TaskName = "Redis Server"
 $Action = New-ScheduledTaskAction -Execute "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe"
 $Trigger = New-ScheduledTaskTrigger -AtStartup
 $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
-# Remove existing task if it exists
-Unregister-ScheduledTask -TaskName "Redis Server" -Confirm:$false -ErrorAction SilentlyContinue
+# Check if the task already exists
+if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+    Write-Host "Scheduled task '$TaskName' already exists. Removing the existing task..."
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+}
 
 # Register the new task
-Register-ScheduledTask -TaskName "Redis Server" -Action $Action -Trigger $Trigger -Principal $Principal
+Write-Host "Registering the scheduled task '$TaskName'..."
+Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal
+Write-Host "Scheduled task '$TaskName' registered successfully."
 
-# Start Redis server now in the background
-Start-Process "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe" -WindowStyle Hidden
+function Is-RedisRunning {
+    $redisProcess = Get-Process -Name "redis-server" -ErrorAction SilentlyContinue
+    return $redisProcess -ne $null
+}
 
-# Install Rust using rustup
-Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
-Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
-.\rustup-init.exe -y
+# Start Redis server if not already running
+if (Is-RedisRunning) {
+    Write-Host "Redis is already running."
+} else {
+    Write-Host "Starting Redis server..."
+    Start-Process "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe" -WindowStyle Hidden
+    Start-Sleep -Seconds 2  # Give some time for Redis to initialize
+    if (Is-RedisRunning) {
+        Write-Host "Redis server started successfully."
+    } else {
+        Write-Error "Failed to start Redis server."
+    }
+}
 
-# Delete the installer file
-Remove-Item rustup-init.exe
+function Is-RustInstalled {
+    $rustVersion = & rustc --version 2>$null
+    return $rustVersion -match "^rustc"
+}
 
-Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
+# Install Rust if not already installed
+if (Is-RustInstalled) {
+    Write-Host "Rust is already installed."
+} else {
+    Write-Host "Downloading and installing Rust..."
+    
+    # Download Rustup installer
+    Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
 
-# Install Build Tools with necessary components
-.\vs_buildtools.exe --quiet --wait --norestart --nocache `
-    --installPath "C:\BuildTools" `
-    --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-    --add Microsoft.VisualStudio.Component.Windows10SDK.19041
+    # Run the installer and wait for it to complete
+    Start-Process -FilePath ".\rustup-init.exe" -ArgumentList "-y" -Wait
 
-# Delete the installer
-Remove-Item vs_buildtools.exe
+    # Check if installation succeeded
+    if (Is-RustInstalled) {
+        Write-Host "Rust installation completed successfully."
+    } else {
+        Write-Error "Rust installation failed. Please check the logs for details."
+    }
+
+    # Clean up the installer
+    Remove-Item rustup-init.exe -Force
+}
+
+function Is-BuildToolsInstalled {
+    $installedProducts = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" `
+        -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -property installationPath
+    return $installedProducts -ne $null
+}
+
+# Check if Build Tools is installed
+if (Is-BuildToolsInstalled) {
+    Write-Host "Visual Studio Build Tools is already installed."
+} else {
+    Write-Host "Downloading Visual Studio Build Tools installer..."
+    
+    # Download the installer
+    Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
+
+    Write-Host "Installing Visual Studio Build Tools..."
+    
+    # Start installation
+    Start-Process -FilePath ".\vs_buildtools.exe" `
+        -ArgumentList "--quiet", "--norestart", "--nocache", `
+        "--installPath", "C:\BuildTools", `
+        "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", `
+        "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041" `
+        -Wait
+
+    # Check the installation result
+    if (Is-BuildToolsInstalled) {
+        Write-Host "Visual Studio Build Tools installation completed successfully."
+    } else {
+        Write-Error "Installation failed. Please check the logs for details."
+    }
+
+    # Delete the installer
+    Remove-Item -Path "vs_buildtools.exe" -Force
+}
 
 # Refresh variables
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
