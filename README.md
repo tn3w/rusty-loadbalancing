@@ -170,7 +170,7 @@ Unregister-ScheduledTask -TaskName "Redis Server" -Confirm:$false -ErrorAction S
 Register-ScheduledTask -TaskName "Redis Server" -Action $Action -Trigger $Trigger -Principal $Principal
 
 # Start Redis server now in the background
-Start-Process "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe" -WindowStyle Hidden -NoNewWindow
+Start-Process "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe" -WindowStyle Hidden
 
 # Install Rust using rustup
 Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
