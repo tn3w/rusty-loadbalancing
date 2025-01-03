@@ -183,53 +183,27 @@ rusty-loadbalancing --help
 
 Ubuntu/Debian:
 ```bash
-sudo apt-get update && sudo apt-get install git curl build-essential -y && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.bashrc && sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz && sudo tar -xzvf redis-stable.tar.gz && cd redis-stable && sudo make install && sudo adduser --system --group --no-create-home redis && echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable redis && sudo systemctl start redis && cd .. && sudo rm redis-stable.tar.gz && sudo rm -rf redis-stable && git clone https://github.com/tn3w/rusty-loadbalancing.git && cd rusty-loadbalancing && cargo build --release && sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing && cd .. && sudo rm -rf rusty-loadbalancing && rusty-loadbalancing --help
+sudo apt-get update; sudo apt-get install git curl build-essential -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
 Fedora:
 ```bash
-# Update and install git, curl, GCC, Rust, and Cargo
-sudo dnf update -y
-sudo dnf groupinstall "Development Tools" -y
-sudo dnf install git curl -y
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source ~/.bashrc
-
-# (The rest of the Redis and rusty-loadbalancing steps are the same as Ubuntu.)
+sudo dnf update -y; sudo dnf groupinstall "Development Tools" -y; sudo dnf install git curl -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
 CentOS/RHEL
 ```bash
-# Update and install git, curl, GCC, Rust, and Cargo
-sudo yum update -y
-sudo yum groupinstall "Development Tools" -y
-sudo yum install git curl -y
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source ~/.bashrc
-
-# (The rest of the Redis and rusty-loadbalancing steps are the same as Ubuntu.)
+sudo yum update -y; sudo yum groupinstall "Development Tools" -y; sudo yum install git curl -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
 Arch Linux
 ```bash
-# Update and install git, curl, base-devel, Rust, and Cargo
-sudo pacman -Syu --noconfirm
-sudo pacman -S --noconfirm git curl base-devel
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source ~/.bashrc
-
-# (The rest of the Redis and rusty-loadbalancing steps are the same as Ubuntu.)
+sudo pacman -Syu --noconfirm; sudo pacman -S --noconfirm git curl base-devel; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
 openSUSE
 ```bash
-# Update and install git, curl, GCC, Rust, and Cargo
-sudo zypper refresh
-sudo zypper install -y git curl gcc gcc-c++ make
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source ~/.bashrc
-
-# (The rest of the Redis and rusty-loadbalancing steps are the same as Ubuntu.)
+sudo zypper refresh; sudo zypper install -y git curl gcc gcc-c++ make; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
 ```
 
 macOS:
