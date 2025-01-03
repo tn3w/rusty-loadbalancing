@@ -149,6 +149,10 @@
 
 ### Quick commands
 #### Windows Powershell:
+> [!IMPORTANT]
+> Errors may occur during the installation, this is because certain programs are not yet installed, which are then installed automatically.
+> It can also take longer to complete, which means that Visual Studio Build tools required for cargo build are automatically installed.
+
 ```powershell
 cd ~; Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))}; choco upgrade chocolatey -y; choco install git redis -y; $TaskName="Redis Server"; $Action=New-ScheduledTaskAction -Execute "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe"; $Trigger=New-ScheduledTaskTrigger -AtStartup; $Principal=New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest; if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue}; Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal; function Is-RedisRunning {Get-Process -Name "redis-server" -ErrorAction SilentlyContinue -ne $null}; if (Is-RedisRunning) {Write-Host "Redis is already running."} else {Start-Process "C:\ProgramData\chocolatey\lib\redis\tools\redis-server.exe" -WindowStyle Hidden; Start-Sleep -Seconds 2; if (-not (Is-RedisRunning)) {Write-Error "Failed to start Redis server."}}; function Is-RustInstalled {& rustc --version 2>$null -match "^rustc"}; if (-not (Is-RustInstalled)) {Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe; Start-Process -FilePath ".\rustup-init.exe" -ArgumentList "-y" -Wait; Remove-Item rustup-init.exe -Force}; function Is-BuildToolsInstalled {& "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath -ne $null}; if (-not (Is-BuildToolsInstalled)) {Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"; Start-Process -FilePath ".\vs_buildtools.exe" -ArgumentList "--quiet", "--norestart", "--nocache", "--installPath", "C:\BuildTools", "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041" -Wait; Remove-Item -Path "vs_buildtools.exe" -Force}; $env:Path=[System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User"); git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; Move-Item .\target\release\rusty-loadbalancing.exe "C:\Program Files\rusty-loadbalancing.exe"; cd ..; Remove-Item -Recurse -Force rusty-loadbalancing
 ```
@@ -159,6 +163,9 @@ After using this command you can start the tool with the following command:
 ```
 
 #### macOS (not tested):
+> [!CAUTION]
+> This command could not be tested due to the closed nature of the macOS operating system, please verify its security and report issues [here](https://github.com/tn3w/rusty-loadbalancing/issues).
+
 ```bash
 /bin/bash -c "$(command -v brew &>/dev/null || /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\") && brew update && brew install rust git redis && brew services start redis && git clone https://github.com/tn3w/rusty-loadbalancing.git && cd rusty-loadbalancing && cargo build --release && sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing && cd .. && sudo rm -rf rusty-loadbalancing"
 ```
