@@ -148,6 +148,9 @@
     ```
 
 ### Quick commands
+
+---
+
 #### Windows Powershell:
 > [!IMPORTANT]
 > Errors may occur during the installation, this is because certain programs are not yet installed, which are then installed automatically.
@@ -162,6 +165,8 @@ After using this command you can start the tool with the following command:
 & "C:\Program Files\rusty-loadbalancing.exe" --help
 ```
 
+---
+
 #### macOS (not tested):
 > [!CAUTION]
 > This command could not be tested due to the closed nature of the macOS operating system, please verify its security and report issues [here](https://github.com/tn3w/rusty-loadbalancing/issues).
@@ -175,6 +180,7 @@ After using this command you can start the tool with the following command:
 rusty-loadbalancing --help
 ```
 
+---
 
 #### Ubuntu/Debian:
 ```bash
@@ -186,6 +192,8 @@ After using this command you can start the tool with the following command:
 rusty-loadbalancing --help
 ```
 
+---
+
 #### Fedora:
 ```bash
 sudo dnf update -y; sudo dnf groupinstall "Development Tools" -y; sudo dnf install git curl -y; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
@@ -195,6 +203,8 @@ After using this command you can start the tool with the following command:
 ```bash
 rusty-loadbalancing --help
 ```
+
+---
 
 #### CentOS/RHEL
 ```bash
@@ -206,6 +216,8 @@ After using this command you can start the tool with the following command:
 rusty-loadbalancing --help
 ```
 
+---
+
 #### Arch Linux
 ```bash
 sudo pacman -Syu --noconfirm; sudo pacman -S --noconfirm git curl base-devel; curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source ~/.bashrc; sudo curl -o redis-stable.tar.gz https://download.redis.io/redis-stable.tar.gz; sudo tar -xzvf redis-stable.tar.gz; cd redis-stable; sudo make install; sudo adduser --system --group --no-create-home redis; echo -e "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nUser=redis\nGroup=redis\nExecStart=/usr/local/bin/redis-server\nExecStop=/usr/local/bin/redis-cli shutdown\nRestart=always\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/redis.service > /dev/null; sudo systemctl daemon-reload; sudo systemctl enable redis; sudo systemctl start redis; cd ..; sudo rm redis-stable.tar.gz; sudo rm -rf redis-stable; git clone https://github.com/tn3w/rusty-loadbalancing.git; cd rusty-loadbalancing; cargo build --release; sudo cp ./target/release/rusty-loadbalancing /usr/local/bin/rusty-loadbalancing; cd ..; sudo rm -rf rusty-loadbalancing; rusty-loadbalancing --help
@@ -215,6 +227,8 @@ After using this command you can start the tool with the following command:
 ```bash
 rusty-loadbalancing --help
 ```
+
+---
 
 #### openSUSE
 ```bash
