@@ -21,3 +21,9 @@ Cargo.lock
 
 # test files:
 test*
+
+# config.toml
+config.toml
+
+# rate_limit.html
+rate_limit.html
